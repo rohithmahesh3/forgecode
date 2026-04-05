@@ -172,6 +172,10 @@ impl<F: HttpInfra> GoogleResponseRepository<F> {
         // For OAuth, extract the access token
         let (token, use_api_key_header) = match creds {
             forge_domain::AuthDetails::ApiKey(api_key) => (api_key.as_str().to_string(), true),
+            forge_domain::AuthDetails::ApiKeys(_) => {
+                let t = creds.bearer_token().expect("ApiKeys should be non-empty");
+                (t.to_string(), true)
+            }
             forge_domain::AuthDetails::GoogleAdc(token) => (token.as_str().to_string(), false),
             forge_domain::AuthDetails::OAuth { tokens, .. } => {
                 (tokens.access_token.as_str().to_string(), false)

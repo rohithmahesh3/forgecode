@@ -245,6 +245,7 @@ impl<A: Services, F: CommandInfra + EnvironmentInfra + SkillRepository + GrpcInf
             .as_ref()
             .and_then(|c| match &c.auth_details {
                 forge_domain::AuthDetails::ApiKey(key) => Some(key.as_str()),
+                forge_domain::AuthDetails::ApiKeys(keys) => keys.first().map(|k| k.as_str()),
                 _ => None,
             })
         {

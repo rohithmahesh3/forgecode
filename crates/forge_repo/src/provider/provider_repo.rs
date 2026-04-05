@@ -351,10 +351,23 @@ impl<F: EnvironmentInfra + FileReaderInfra + FileWriterInfra + HttpInfra>
             }
         }
 
-        // Create AuthCredential
+        // Create AuthCredential — split on commas to support multiple API keys
+        let keys: Vec<ApiKey> = api_key
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| ApiKey::from(s.to_string()))
+            .collect();
+
+        let auth_details = match keys.len() {
+            0 => AuthDetails::ApiKey(ApiKey::from(String::new())),
+            1 => AuthDetails::ApiKey(keys.into_iter().next().unwrap()),
+            _ => AuthDetails::ApiKeys(keys),
+        };
+
         Ok(AuthCredential {
             id: config.id.clone(),
-            auth_details: AuthDetails::ApiKey(ApiKey::from(api_key)),
+            auth_details,
             url_params,
         })
     }
@@ -1200,6 +1213,9 @@ mod env_tests {
                 .as_ref()
                 .and_then(|c| match &c.auth_details {
                     forge_domain::AuthDetails::ApiKey(key) => Some(key.to_string()),
+                    forge_domain::AuthDetails::ApiKeys(keys) => {
+                        keys.first().map(|k| k.to_string())
+                    }
                     _ => None,
                 }),
             Some("test-key-123".to_string())

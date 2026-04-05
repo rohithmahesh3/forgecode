@@ -73,18 +73,13 @@ impl<H: HttpInfra> OpenAIResponsesProvider<H> {
 
     fn get_headers_for_conversation(&self, conversation_id: Option<&str>) -> Vec<(String, String)> {
         let mut headers = Vec::new();
-        if let Some(api_key) = self
+        if let Some(token) = self
             .provider
             .credential
             .as_ref()
-            .map(|c| match &c.auth_details {
-                forge_domain::AuthDetails::ApiKey(key) => key.as_str(),
-                forge_domain::AuthDetails::OAuthWithApiKey { api_key, .. } => api_key.as_str(),
-                forge_domain::AuthDetails::OAuth { tokens, .. } => tokens.access_token.as_str(),
-                forge_domain::AuthDetails::GoogleAdc(token) => token.as_str(),
-            })
+            .and_then(|c| c.auth_details.bearer_token())
         {
-            headers.push((AUTHORIZATION.to_string(), format!("Bearer {api_key}")));
+            headers.push((AUTHORIZATION.to_string(), format!("Bearer {token}")));
         }
         self.provider
             .auth_methods

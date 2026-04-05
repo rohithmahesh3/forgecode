@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use forge_app::{AuthStrategy, OAuthHttpProvider, StrategyFactory};
 use forge_domain::{
-    ApiKey, ApiKeyRequest, AuthContextRequest, AuthContextResponse, AuthCredential, CodeRequest,
-    DeviceCodeRequest, OAuthConfig, OAuthTokenResponse, OAuthTokens, ProviderId, URLParamSpec,
+    ApiKey, ApiKeyRequest, AuthContextRequest, AuthContextResponse, AuthCredential, AuthDetails,
+    CodeRequest, DeviceCodeRequest, OAuthConfig, OAuthTokenResponse, OAuthTokens, ProviderId,
+    URLParamSpec,
 };
 use google_cloud_auth::credentials::Builder;
 use oauth2::basic::BasicClient;
@@ -42,11 +43,29 @@ impl AuthStrategy for ApiKeyStrategy {
         context_response: AuthContextResponse,
     ) -> anyhow::Result<AuthCredential> {
         match context_response {
-            AuthContextResponse::ApiKey(ctx) => Ok(AuthCredential::new_api_key(
-                self.provider_id.clone(),
-                ctx.response.api_key,
-            )
-            .url_params(ctx.response.url_params)),
+            AuthContextResponse::ApiKey(ctx) => {
+                let keys: Vec<ApiKey> = ctx
+                    .response
+                    .api_key
+                    .as_ref()
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| ApiKey::from(s.to_string()))
+                    .collect();
+
+                let auth_details = match keys.len() {
+                    0 => AuthDetails::ApiKey(ApiKey::from(String::new())),
+                    1 => AuthDetails::ApiKey(keys.into_iter().next().unwrap()),
+                    _ => AuthDetails::ApiKeys(keys),
+                };
+
+                Ok(AuthCredential {
+                    id: self.provider_id.clone(),
+                    auth_details,
+                    url_params: ctx.response.url_params,
+                })
+            }
             _ => Err(AuthError::InvalidContext("Expected ApiKey context".to_string()).into()),
         }
     }
@@ -1141,6 +1160,79 @@ mod tests {
             vec![],
         );
         assert!(strategy.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_api_key_strategy_complete_single_key() {
+        let strategy = ApiKeyStrategy::new(ProviderId::NVIDIA, vec![]);
+        let request = ApiKeyRequest {
+            required_params: vec![],
+            existing_params: None,
+            api_key: None,
+        };
+        let response = AuthContextResponse::api_key(
+            request,
+            "nvapi-test-key-123",
+            HashMap::new(),
+        );
+        let actual = strategy.complete(response).await.unwrap();
+        let expected = AuthCredential {
+            id: ProviderId::NVIDIA,
+            auth_details: AuthDetails::ApiKey(ApiKey::from("nvapi-test-key-123".to_string())),
+            url_params: HashMap::new(),
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn test_api_key_strategy_complete_multiple_comma_separated_keys() {
+        let strategy = ApiKeyStrategy::new(ProviderId::NVIDIA, vec![]);
+        let request = ApiKeyRequest {
+            required_params: vec![],
+            existing_params: None,
+            api_key: None,
+        };
+        let response = AuthContextResponse::api_key(
+            request,
+            "nvapi-key-1,nvapi-key-2",
+            HashMap::new(),
+        );
+        let actual = strategy.complete(response).await.unwrap();
+        let expected = AuthCredential {
+            id: ProviderId::NVIDIA,
+            auth_details: AuthDetails::ApiKeys(vec![
+                ApiKey::from("nvapi-key-1".to_string()),
+                ApiKey::from("nvapi-key-2".to_string()),
+            ]),
+            url_params: HashMap::new(),
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn test_api_key_strategy_complete_keys_with_spaces() {
+        let strategy = ApiKeyStrategy::new(ProviderId::NVIDIA, vec![]);
+        let request = ApiKeyRequest {
+            required_params: vec![],
+            existing_params: None,
+            api_key: None,
+        };
+        let response = AuthContextResponse::api_key(
+            request,
+            "nvapi-key-1 , nvapi-key-2 , nvapi-key-3",
+            HashMap::new(),
+        );
+        let actual = strategy.complete(response).await.unwrap();
+        let expected = AuthCredential {
+            id: ProviderId::NVIDIA,
+            auth_details: AuthDetails::ApiKeys(vec![
+                ApiKey::from("nvapi-key-1".to_string()),
+                ApiKey::from("nvapi-key-2".to_string()),
+                ApiKey::from("nvapi-key-3".to_string()),
+            ]),
+            url_params: HashMap::new(),
+        };
+        assert_eq!(actual, expected);
     }
 
     #[test]

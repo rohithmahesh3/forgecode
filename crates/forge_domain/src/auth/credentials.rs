@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use derive_setters::Setters;
@@ -52,7 +53,7 @@ impl AuthCredential {
     /// Checks if the credential needs to be refreshed.
     pub fn needs_refresh(&self, buffer: chrono::Duration) -> bool {
         match &self.auth_details {
-            AuthDetails::ApiKey(_) => false,
+            AuthDetails::ApiKey(_) | AuthDetails::ApiKeys(_) => false,
             // Google ADC tokens are short-lived (1 hour) and should always be checked/refreshed
             AuthDetails::GoogleAdc(_) => true,
             AuthDetails::OAuth { tokens, .. } | AuthDetails::OAuthWithApiKey { tokens, .. } => {
@@ -77,6 +78,8 @@ impl AuthCredential {
 pub enum AuthDetails {
     #[serde(alias = "ApiKey")]
     ApiKey(ApiKey),
+    #[serde(alias = "ApiKeys")]
+    ApiKeys(Vec<ApiKey>),
     #[serde(alias = "GoogleAdc")]
     GoogleAdc(ApiKey),
     #[serde(alias = "OAuth")]
@@ -92,10 +95,32 @@ pub enum AuthDetails {
     },
 }
 
+/// Global counter for round-robin key selection across `ApiKeys` variants.
+static ROUND_ROBIN_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 impl AuthDetails {
+    /// Returns the bearer token string for any auth variant.
+    /// For `ApiKeys`, cycles through keys using atomic round-robin.
+    pub fn bearer_token(&self) -> Option<&str> {
+        match self {
+            AuthDetails::ApiKey(key) => Some(key.as_str()),
+            AuthDetails::ApiKeys(keys) => {
+                if keys.is_empty() {
+                    return None;
+                }
+                let idx = ROUND_ROBIN_COUNTER.fetch_add(1, Ordering::Relaxed) % keys.len();
+                Some(keys[idx].as_str())
+            }
+            AuthDetails::GoogleAdc(key) => Some(key.as_str()),
+            AuthDetails::OAuth { tokens, .. } => Some(tokens.access_token.as_str()),
+            AuthDetails::OAuthWithApiKey { api_key, .. } => Some(api_key.as_str()),
+        }
+    }
+
     pub fn api_key(&self) -> Option<&ApiKey> {
         match self {
             AuthDetails::ApiKey(api_key) => Some(api_key),
+            AuthDetails::ApiKeys(keys) => keys.first(),
             AuthDetails::GoogleAdc(api_key) => Some(api_key),
             AuthDetails::OAuth { .. } => None,
             AuthDetails::OAuthWithApiKey { .. } => None,

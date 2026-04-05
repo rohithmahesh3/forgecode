@@ -48,12 +48,7 @@ impl<H: HttpInfra> Anthropic<H> {
             .provider
             .credential
             .as_ref()
-            .map(|c| match &c.auth_details {
-                forge_domain::AuthDetails::ApiKey(key) => key.as_str(),
-                forge_domain::AuthDetails::OAuthWithApiKey { api_key, .. } => api_key.as_str(),
-                forge_domain::AuthDetails::OAuth { tokens, .. } => tokens.access_token.as_str(),
-                forge_domain::AuthDetails::GoogleAdc(api_key) => api_key.as_str(),
-            });
+            .and_then(|c| c.auth_details.bearer_token());
 
         if let Some(api_key) = api_key {
             // For Vertex AI, use Authorization: Bearer with Google ADC token

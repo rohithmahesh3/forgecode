@@ -252,6 +252,7 @@ impl Provider<Url> {
             .as_ref()
             .and_then(|c| match &c.auth_details {
                 AuthDetails::ApiKey(key) => Some(key),
+                AuthDetails::ApiKeys(keys) => keys.first(),
                 _ => None,
             })
     }
