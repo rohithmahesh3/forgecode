@@ -2694,8 +2694,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         }
 
         let last_full_idx = lines.last().map(|(fi, _)| fi.to_string()).unwrap_or_default();
-        let mut rows: Vec<SelectRow> = Vec::with_capacity(lines.len() + 1);
-        rows.push(SelectRow::header(format!("{:>3}  Message", "#")));
+        let mut rows: Vec<SelectRow> = Vec::with_capacity(lines.len());
         for (full_idx, display) in &lines {
             rows.push(
                 SelectRow::new(full_idx.to_string(), display.clone())
@@ -2706,7 +2705,6 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         let selected =
             tokio::task::spawn_blocking(move || -> anyhow::Result<Option<SelectRow>> {
                 Ok(ForgeWidget::select_rows("Rewind to message", rows)
-                    .header_lines(1_usize)
                     .initial_raw(last_full_idx)
                     .prompt()?)
             })

@@ -737,7 +737,7 @@ impl Context {
                 } else {
                     preview.to_string()
                 };
-                (full_idx, format!("[{:>3}] User: {preview}", user_idx + 1))
+                (full_idx, preview)
             })
             .collect()
     }
