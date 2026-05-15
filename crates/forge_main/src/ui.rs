@@ -2693,16 +2693,18 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         )?;
         self.writeln("")?;
 
+        // Display user messages with numbered indices
         let lines = context.format_messages_for_rewind();
-        for line in &lines {
+        let user_count = lines.len();
+        for (_full_idx, line) in &lines {
             self.writeln(line)?;
         }
 
         self.writeln("")?;
 
-        // Ask user for the message index to rewind to
-        let default = format!("{}", context.messages.len().saturating_sub(1));
-        let input = ForgeWidget::input("Rewind to message index (leave empty to cancel)")
+        // Ask user for the user message number to rewind to
+        let default = format!("{user_count}");
+        let input = ForgeWidget::input("Rewind to user message (1-indexed, leave empty to cancel)")
             .allow_empty(true)
             .with_default(&default)
             .prompt()?;
@@ -2715,12 +2717,11 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             }
         };
 
-        let keep_idx: usize = match input.parse() {
-            Ok(n) if n < context.messages.len() => n,
+        let keep_nth_user: usize = match input.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= user_count => n - 1, // convert to 0-indexed
             _ => {
                 self.writeln_title(TitleFormat::error(format!(
-                    "Invalid index. Must be between 0 and {}.",
-                    context.messages.len() - 1
+                    "Invalid selection. Must be between 1 and {user_count}.",
                 )))?;
                 return Ok(());
             }
@@ -2728,10 +2729,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
 
         let total_before = context.messages.len();
 
-        // Perform the truncation
-        let mut truncated_context = context.clone();
-        truncated_context = truncated_context.truncate(keep_idx);
+        // Perform the truncation (keep messages up to and including the selected user message)
+        let truncated_context = context.clone().truncate_to_user_message(keep_nth_user);
         let removed = total_before - truncated_context.messages.len();
+        let num_messages = truncated_context.messages.len();
 
         conversation.context = Some(truncated_context);
         conversation.metadata.updated_at = Some(chrono::Utc::now());
@@ -2739,9 +2740,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         self.api.upsert_conversation(conversation).await?;
 
         let summary = if removed > 0 {
-            format!("Removed {removed} messages. Now has {} messages.", keep_idx + 1)
+            format!("Removed {removed} messages. Now has {num_messages} messages.")
         } else {
-            format!("No messages removed. Still {} messages.", total_before)
+            format!("No messages removed. Still {total_before} messages.")
         };
 
         self.writeln_title(

@@ -700,18 +700,36 @@ impl Context {
         self
     }
 
-    /// Formats messages with numbered indices for display during interactive
-    /// rewind. Each line shows: `[N] Role: preview_content`
-    pub fn format_messages_for_rewind(&self) -> Vec<String> {
+    /// Truncates the conversation to keep messages up to and including the
+    /// Nth (0-indexed) user message. All messages after that user message's
+    /// assistant response are discarded.
+    pub fn truncate_to_user_message(mut self, nth_user: usize) -> Self {
+        let cut_after = self
+            .messages
+            .iter()
+            .enumerate()
+            .filter_map(|(i, entry)| entry.has_role(Role::User).then_some(i))
+            .nth(nth_user);
+
+        match cut_after {
+            Some(idx) if idx < self.messages.len() => {
+                self.messages.truncate(idx + 1);
+                self
+            }
+            _ => self,
+        }
+    }
+
+    /// Formats user messages with numbered indices for display during interactive
+    /// rewind. Returns a list of `(full_message_index, display_string)` tuples,
+    /// where the display string shows a 1-indexed user message number and preview.
+    pub fn format_messages_for_rewind(&self) -> Vec<(usize, String)> {
         self.messages
             .iter()
             .enumerate()
-            .map(|(i, entry)| {
-                let role = match &**entry {
-                    ContextMessage::Text(msg) => format!("{:?}", msg.role),
-                    ContextMessage::Tool(_) => "Tool".to_string(),
-                    ContextMessage::Image(_) => "Image".to_string(),
-                };
+            .filter(|(_, entry)| entry.has_role(Role::User))
+            .enumerate()
+            .map(|(user_idx, (full_idx, entry))| {
                 let preview = entry.content().unwrap_or("").trim();
                 let max_len = 100;
                 let preview = if preview.len() > max_len {
@@ -719,7 +737,7 @@ impl Context {
                 } else {
                     preview.to_string()
                 };
-                format!("[{i:>3}] {role:>9}: {preview}")
+                (full_idx, format!("[{:>3}] User: {preview}", user_idx + 1))
             })
             .collect()
     }
