@@ -728,7 +728,12 @@ impl Context {
         self.messages
             .iter()
             .enumerate()
-            .filter(|(_, entry)| entry.has_role(Role::User))
+            .filter(|(_, entry)| {
+                match &entry.message {
+                    ContextMessage::Text(msg) => msg.role == Role::User && !msg.droppable,
+                    _ => false,
+                }
+            })
             .enumerate()
             .map(|(_user_idx, (full_idx, entry))| {
                 let preview = entry.content().unwrap_or("").trim();
@@ -748,7 +753,12 @@ impl Context {
     pub fn user_message_count(&self) -> usize {
         self.messages
             .iter()
-            .filter(|msg| msg.has_role(Role::User))
+            .filter(|msg| {
+                match &msg.message {
+                    ContextMessage::Text(msg) => msg.role == Role::User && !msg.droppable,
+                    _ => false,
+                }
+            })
             .count()
     }
 
