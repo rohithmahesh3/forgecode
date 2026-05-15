@@ -241,6 +241,9 @@ function forge-accept-line() {
         conversation-rename)
             _forge_action_conversation_rename "$input_text"
         ;;
+        rewind)
+            _forge_action_rewind "$input_text"
+        ;;
         copy)
             _forge_action_copy
         ;;

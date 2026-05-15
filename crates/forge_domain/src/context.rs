@@ -17,7 +17,7 @@ fn is_false(value: &bool) -> bool {
 use crate::temperature::Temperature;
 use crate::top_k::TopK;
 use crate::top_p::TopP;
-use crate::xml::strip_xml_tags;
+use crate::xml::{clean_user_prompt, strip_xml_tags};
 use crate::{
     Attachment, AttachmentContent, ConversationId, EventValue, Image, MessagePhase, ModelId,
     ReasoningFull, ToolChoice, ToolDefinition, ToolOutput, ToolValue, Usage,
@@ -701,11 +701,10 @@ impl Context {
         self
     }
 
-    /// Truncates the conversation to keep messages up to and including the
-    /// Nth (0-indexed) user message. All messages after that user message's
-    /// assistant response are discarded.
+    /// Truncates the conversation to keep messages up to (but excluding) the
+    /// Nth (0-indexed) user message. All subsequent messages are discarded.
     pub fn truncate_to_user_message(mut self, nth_user: usize) -> Self {
-        let cut_after = self
+        let cut_at = self
             .messages
             .iter()
             .enumerate()
@@ -719,9 +718,9 @@ impl Context {
             })
             .nth(nth_user);
 
-        match cut_after {
+        match cut_at {
             Some(idx) if idx < self.messages.len() => {
-                self.messages.truncate(idx + 1);
+                self.messages.truncate(idx);
                 self
             }
             _ => self,
@@ -743,8 +742,9 @@ impl Context {
             })
             .enumerate()
             .map(|(_user_idx, (full_idx, entry))| {
-                let preview = entry.content().unwrap_or("").trim();
-                let preview = strip_xml_tags(preview);
+                let content = entry.content().unwrap_or("").trim();
+                let cleaned = clean_user_prompt(content);
+                let preview = strip_xml_tags(&cleaned);
                 let max_len = 100;
                 let preview = if preview.len() > max_len {
                     format!("{}...", &preview[..max_len])
@@ -770,16 +770,25 @@ impl Context {
     }
 
     /// Returns the file paths modified by tool results in messages
-    /// after the given index (exclusive). Used by rewind to know which
+    /// at or after the given index (inclusive). Used by rewind to know which
     /// file snapshots to revert.
-    pub fn modified_files_after(&self, keep_up_to: usize) -> Vec<String> {
+    pub fn modified_files_from(&self, from_index: usize) -> Vec<String> {
         let mut files = Vec::new();
-        for msg in &self.messages[usize::min(keep_up_to + 1, self.messages.len())..] {
-            if let ContextMessage::Tool(result) = &msg.message {
-                files.extend(result.modified_files.iter().cloned());
+        if from_index < self.messages.len() {
+            for msg in &self.messages[from_index..] {
+                if let ContextMessage::Tool(result) = &msg.message {
+                    files.extend(result.modified_files.iter().cloned());
+                }
             }
         }
         files
+    }
+
+    /// Returns the file paths modified by tool results in messages
+    /// after the given index (exclusive). Used by rewind to know which
+    /// file snapshots to revert.
+    pub fn modified_files_after(&self, keep_up_to: usize) -> Vec<String> {
+        self.modified_files_from(keep_up_to + 1)
     }
 
     /// Returns the count of assistant messages in the context
@@ -1795,6 +1804,53 @@ mod tests {
         let expected = false; // Last assistant used "model2", same as current
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_truncate_to_user_message_exclusive() {
+        let context = Context::default()
+            .add_message(ContextMessage::user("U1", None)) // idx 0
+            .add_message(TextMessage::assistant("A1", None, None)) // idx 1
+            .add_message(ContextMessage::user("U2", None)) // idx 2
+            .add_message(TextMessage::assistant("A2", None, None)); // idx 3
+
+        // Rewind to U2 (nth_user = 1) -> keeps [U1, A1]
+        let rewound = context.clone().truncate_to_user_message(1);
+        assert_eq!(rewound.messages.len(), 2);
+        assert_eq!(rewound.messages[0].content().unwrap(), "U1");
+        assert_eq!(rewound.messages[1].content().unwrap(), "A1");
+
+        // Rewind to U1 (nth_user = 0) -> keeps []
+        let rewound = context.truncate_to_user_message(0);
+        assert_eq!(rewound.messages.len(), 0);
+    }
+
+    #[test]
+    fn test_modified_files_from() {
+        use crate::{ToolName, ToolOutput, ToolResult};
+        let context = Context::default()
+            .add_message(ContextMessage::user("U1", None))
+            .add_message(ContextMessage::Tool(ToolResult {
+                name: ToolName::new("write"),
+                call_id: None,
+                output: ToolOutput::text("ok"),
+                modified_files: vec!["file1.txt".to_string()],
+            }))
+            .add_message(ContextMessage::user("U2", None))
+            .add_message(ContextMessage::Tool(ToolResult {
+                name: ToolName::new("patch"),
+                call_id: None,
+                output: ToolOutput::text("ok"),
+                modified_files: vec!["file2.txt".to_string()],
+            }));
+
+        // From U2 (idx 2)
+        let files = context.modified_files_from(2);
+        assert_eq!(files, vec!["file2.txt".to_string()]);
+
+        // From U1 (idx 0)
+        let files = context.modified_files_from(0);
+        assert_eq!(files, vec!["file1.txt".to_string(), "file2.txt".to_string()]);
     }
 
     /// Regression test: when both `reasoning` (raw text) and

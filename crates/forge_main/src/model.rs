@@ -143,6 +143,7 @@ impl ForgeCommandManager {
                 | "suggest"
                 | "s"
                 | "clone"
+                | "rewind"
                 | "conversation-rename"
                 | "copy"
                 | "workspace-sync"

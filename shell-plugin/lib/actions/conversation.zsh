@@ -235,6 +235,43 @@ function _forge_action_conversation_rename() {
     fi
 }
 
+# Action handler: Rewind conversation
+# Usage: :rewind [<id>]
+function _forge_action_rewind() {
+    local input_text="$1"
+    local forge_dir=".forge"
+    
+    # Create .forge directory if it doesn't exist
+    if [[ ! -d "$forge_dir" ]]; then
+        mkdir -p "$forge_dir" || return 1
+    fi
+    
+    local rewind_file="${forge_dir}/FORGE_REWIND_MSG"
+    rm -f "$rewind_file"
+
+    # Use _forge_exec_interactive to allow the Rust TUI message picker
+    # We export FORGE_REWIND_FILE so the rust process knows where to write the content
+    local -x FORGE_REWIND_FILE="$rewind_file"
+    _forge_exec_interactive conversation rewind $input_text
+    
+    # Check if a message was rewound and we have content
+    if [[ -f "$rewind_file" ]]; then
+        local content
+        content=$(cat "$rewind_file" | tr -d '\r')
+        if [[ -n "$content" ]]; then
+            # Pre-populate buffer with the rewound message
+            # Prefix with : to indicate it's a forge command if the user wants to resubmit
+            # Actually, if it's a regular message, they might want to just type it.
+            # But usually in zsh mode they are typing : <message>
+            BUFFER=": $content"
+            CURSOR=${#BUFFER}
+        fi
+        rm -f "$rewind_file"
+    fi
+    
+    # Note: caller (_forge_reset) will handle reset-prompt
+}
+
 # Helper function to clone and switch to conversation
 function _forge_clone_and_switch() {
     local clone_target="$1"

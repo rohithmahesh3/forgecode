@@ -218,8 +218,45 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ToolReg
     ) -> ToolResult {
         let call_id = call.call_id.clone();
         let tool_name = call.name.clone();
-        let modified_files = Self::extract_modified_files(&call);
-        let output = self.call_inner(agent, call, context).await;
+        let output = self.call_inner(agent, call.clone(), context).await;
+
+        let mut modified_files = Vec::new();
+        match &output {
+            Ok(output) => {
+                if let Some(text) = output.as_str() {
+                    // Extract path from plan_created or file_created tags
+                    // These tags usually contain absolute paths
+                    if let Some(tag) = forge_domain::extract_tag(text, "plan_created") {
+                        if let Some(path) = forge_domain::extract_attribute(tag, "path") {
+                            modified_files.push(path);
+                        }
+                    } else if let Some(tag) = forge_domain::extract_tag(text, "file_created") {
+                        if let Some(path) = forge_domain::extract_attribute(tag, "path") {
+                            modified_files.push(path);
+                        }
+                    } else if let Some(tag) = forge_domain::extract_tag(text, "file_overwritten") {
+                        if let Some(path) = forge_domain::extract_attribute(tag, "path") {
+                            modified_files.push(path);
+                        }
+                    } else if let Some(tag) = forge_domain::extract_tag(text, "file_diff") {
+                        if let Some(path) = forge_domain::extract_attribute(tag, "path") {
+                            modified_files.push(path);
+                        }
+                    } else if let Some(tag) = forge_domain::extract_tag(text, "file_removed") {
+                        if let Some(path) = forge_domain::extract_attribute(tag, "path") {
+                            modified_files.push(path);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // Fallback to extraction from arguments if output didn't yield anything
+        // This is important for relative paths provided in tool arguments
+        if modified_files.is_empty() {
+            modified_files = Self::extract_modified_files(&call);
+        }
 
         ToolResult::new(tool_name)
             .call_id(call_id)

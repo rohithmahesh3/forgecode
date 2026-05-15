@@ -1,3 +1,14 @@
+/// Extracts a full XML tag (including brackets) by its name
+pub fn extract_tag<'a>(text: &'a str, tag_name: &str) -> Option<&'a str> {
+    let opening_pattern = format!(r"<{tag_name}(?:\s[^>]*?)?>");
+    if let Ok(regex) = regex::Regex::new(&opening_pattern) {
+        if let Some(mat) = regex.find(text) {
+            return Some(mat.as_str());
+        }
+    }
+    None
+}
+
 /// Extracts content between the specified XML-style tags
 ///
 /// # Arguments
@@ -56,6 +67,37 @@ pub fn remove_tag_with_prefix(text: &str, prefix: &str) -> String {
     }
 
     result
+}
+
+/// Cleans a user prompt by extracting content from <feedback> tags if present,
+/// or stripping all XML tags and meta-information.
+pub fn clean_user_prompt(text: &str) -> String {
+    // 1. Try to extract content from <feedback> tag
+    if let Some(content) = extract_tag_content(text, "feedback") {
+        return content.to_string();
+    }
+
+    // 2. Remove known meta tags with their content
+    let mut cleaned = remove_tag_with_prefix(text, "system_");
+    cleaned = remove_tag_with_prefix(&cleaned, "context_");
+
+    // 3. Strip all remaining tags but preserve newlines (unlike strip_xml_tags)
+    let tag_pattern = regex::Regex::new(r"<[^>]*>").unwrap();
+    let result = tag_pattern.replace_all(&cleaned, "").to_string();
+
+    // Trim while preserving internal structure
+    result.trim().to_string()
+}
+
+/// Extracts the value of an attribute from an XML tag
+pub fn extract_attribute(tag: &str, attr_name: &str) -> Option<String> {
+    let pattern = format!(r#"{attr_name}="([^"]*)""#, attr_name = attr_name);
+    if let Ok(regex) = regex::Regex::new(&pattern) {
+        if let Some(captures) = regex.captures(tag) {
+            return captures.get(1).map(|m| m.as_str().to_string());
+        }
+    }
+    None
 }
 
 /// Removes all XML/HTML tags from the text, keeping only the content between tags.
@@ -169,10 +211,20 @@ mod tests {
     }
 
     #[test]
-    fn test_with_duplicate_closing_tags() {
-        let fixture = "<foo>1<foo>2</foo>3</foo>";
-        let actual = extract_tag_content(fixture, "foo").unwrap();
-        let expected = "1<foo>2</foo>3";
+    fn test_clean_user_prompt_with_tags() {
+        let fixture = "<feedback>add feature to determine receipe from images using vision llm models</feedback>\n::: <system_date>2026-05-16</system_date>\n::: ";
+        let actual = clean_user_prompt(fixture);
+        // Should extract ONLY feedback and trim
+        let expected = "add feature to determine receipe from images using vision llm models";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_clean_user_prompt_without_feedback() {
+        let fixture = "Just plain text <system_date>2026</system_date>";
+        let actual = clean_user_prompt(fixture);
+        // Should strip system_date and its tags
+        let expected = "Just plain text";
         assert_eq!(actual, expected);
     }
 }

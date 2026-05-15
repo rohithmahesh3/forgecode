@@ -19,6 +19,7 @@ use forge_config::ForgeConfig;
 use forge_display::MarkdownFormat;
 use forge_domain::{
     AuthMethod, ChatResponseContent, ConsoleWriter, ContextMessage, Role, TitleFormat, UserCommand,
+    clean_user_prompt,
 };
 use forge_fs::ForgeFS;
 use forge_select::{ForgeWidget, SelectRow};
@@ -916,6 +917,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 self.state.conversation_id = Some(id);
                 self.writeln_title(TitleFormat::info(format!("Resumed conversation: {id}")))?;
                 // Interactive mode will be handled by the main loop
+            }
+            ConversationCommand::Rewind { id } => {
+                self.on_slash_rewind(id.map(|i| i.to_string())).await?;
             }
             ConversationCommand::Show { id, md } => {
                 let conversation = self.validate_conversation_exists(&id).await?;
@@ -2729,30 +2733,17 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
 
         let total_before = context.messages.len();
 
-        // Find the full index of the Nth user message before truncating
-        // so we can collect the files that will be removed.
-        let cut_index = context
-            .messages
-            .iter()
-            .enumerate()
-            .filter_map(|(i, entry)| {
-                match &entry.message {
-                    ContextMessage::Text(msg) if msg.role == Role::User && !msg.droppable => {
-                        Some(i)
-                    }
-                    _ => None,
-                }
-            })
-            .nth(keep_nth_user);
-
         // Collect file paths that were modified by tool results in messages
         // that will be removed. These files' snapshots need to be reverted.
-        let modified_files: Vec<String> = match cut_index {
-            Some(idx) => context.modified_files_after(idx),
-            None => vec![],
-        };
+        // We use full_idx because it's the index of the user message we are rewinding AT.
+        let modified_files = context.modified_files_from(full_idx);
 
-        // Perform the truncation (keep messages up to and including the selected user message)
+        // Perform the truncation (keep messages up to but excluding the selected user message)
+        let rewound_message_content = context.messages[full_idx]
+            .content()
+            .map(|s| clean_user_prompt(s))
+            .unwrap_or_default();
+
         let truncated_context = context.clone().truncate_to_user_message(keep_nth_user);
         let removed = total_before - truncated_context.messages.len();
         let num_messages = truncated_context.messages.len();
@@ -2796,6 +2787,20 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             TitleFormat::info("Rewound")
                 .sub_title(format!("[{}] {summary}", target_id.into_string())),
         )?;
+
+        // Set the rewound message content in the buffer for review/editing
+        if !rewound_message_content.is_empty() {
+            if self.cli.is_interactive() {
+                self.console.set_buffer(rewound_message_content);
+            } else {
+                // Check if we should write to a temporary file for the shell plugin
+                if let Ok(rewind_file) = std::env::var("FORGE_REWIND_FILE") {
+                    let _ = std::fs::write(rewind_file, &rewound_message_content);
+                }
+                // Also print to stdout as fallback
+                println!("{rewound_message_content}");
+            }
+        }
 
         // If this is the active conversation, update the state
         if self.state.conversation_id == Some(target_id) {
