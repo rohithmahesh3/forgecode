@@ -2683,49 +2683,51 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             return Ok(());
         }
 
-        // Display messages with indices
-        self.writeln_title(TitleFormat::info(format!(
-            "Conversation {} — select message index to rewind to:",
-            target_id.into_string()
-        )))?;
-        self.writeln(
-            "Rewinding will discard ALL messages after the chosen index (inclusive).",
-        )?;
-        self.writeln("")?;
-
-        // Display user messages with numbered indices
+        // Build and show the interactive TUI message selector
         let lines = context.format_messages_for_rewind();
         let user_count = lines.len();
-        for (_full_idx, line) in &lines {
-            self.writeln(line)?;
+        if user_count == 0 {
+            self.writeln_title(TitleFormat::error(
+                "No user messages to rewind to.",
+            ))?;
+            return Ok(());
         }
 
-        self.writeln("")?;
+        let last_full_idx = lines.last().map(|(fi, _)| fi.to_string()).unwrap_or_default();
+        let mut rows: Vec<SelectRow> = Vec::with_capacity(lines.len() + 1);
+        rows.push(SelectRow::header(format!("{:>3}  Message", "#")));
+        for (full_idx, display) in &lines {
+            rows.push(
+                SelectRow::new(full_idx.to_string(), display.clone())
+                    .search(display.clone()),
+            );
+        }
 
-        // Ask user for the user message number to rewind to
-        let default = format!("{user_count}");
-        let input = ForgeWidget::input("Rewind to user message (1-indexed, leave empty to cancel)")
-            .allow_empty(true)
-            .with_default(&default)
-            .prompt()?;
+        let selected =
+            tokio::task::spawn_blocking(move || -> anyhow::Result<Option<SelectRow>> {
+                Ok(ForgeWidget::select_rows("Rewind to message", rows)
+                    .header_lines(1_usize)
+                    .initial_raw(last_full_idx)
+                    .prompt()?)
+            })
+            .await??;
 
-        let input = match input {
-            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => {
+        let full_idx = match selected {
+            Some(row) => row
+                .raw
+                .parse::<usize>()
+                .map_err(|_| anyhow::anyhow!("Invalid message index"))?,
+            None => {
                 self.writeln_title(TitleFormat::info("Rewind cancelled."))?;
                 return Ok(());
             }
         };
 
-        let keep_nth_user: usize = match input.parse::<usize>() {
-            Ok(n) if n >= 1 && n <= user_count => n - 1, // convert to 0-indexed
-            _ => {
-                self.writeln_title(TitleFormat::error(format!(
-                    "Invalid selection. Must be between 1 and {user_count}.",
-                )))?;
-                return Ok(());
-            }
-        };
+        // Find the 0-indexed user message position for the existing truncation method
+        let keep_nth_user = lines
+            .iter()
+            .position(|(fi, _)| *fi == full_idx)
+            .ok_or_else(|| anyhow::anyhow!("Selected message index {full_idx} not found"))?;
 
         let total_before = context.messages.len();
 
