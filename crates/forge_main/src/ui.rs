@@ -2728,8 +2728,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         let modified_files = context.modified_files_from(full_idx);
 
         // Perform the truncation (keep messages up to but excluding the selected user message)
-        let rewound_message_content = context.messages[full_idx]
-            .content()
+        let rewound_message_content = context
+            .messages
+            .get(full_idx)
+            .and_then(|m| m.content())
             .map(clean_user_prompt)
             .unwrap_or_default();
 

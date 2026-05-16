@@ -743,7 +743,10 @@ impl Context {
                 let cleaned = clean_user_prompt(content);
                 let preview = strip_xml_tags(&cleaned);
                 let preview = if preview.len() > REWIND_PREVIEW_MAX_LEN {
-                    format!("{}...", &preview[..REWIND_PREVIEW_MAX_LEN])
+                    format!(
+                        "{}...",
+                        preview.chars().take(REWIND_PREVIEW_MAX_LEN).collect::<String>()
+                    )
                 } else {
                     preview.to_string()
                 };
@@ -765,8 +768,7 @@ impl Context {
     /// file snapshots to revert.
     pub fn modified_files_from(&self, from_index: usize) -> Vec<String> {
         let mut files = Vec::new();
-        if from_index < self.messages.len() {
-            for msg in &self.messages[from_index..] {
+        for msg in self.messages.iter().skip(from_index) {
                 if let ContextMessage::Tool(result) = &msg.message {
                     // 1. Use the pre-calculated modified files from the tool execution
                     let mut msg_modified = result.modified_files.clone();
@@ -785,7 +787,6 @@ impl Context {
                     files.extend(msg_modified);
                 }
             }
-        }
         files
     }
 
