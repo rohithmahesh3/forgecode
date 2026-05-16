@@ -243,6 +243,11 @@ function forge-accept-line() {
         ;;
         rewind)
             _forge_action_rewind "$input_text"
+            local action_status=$?
+            _forge_osc133_emit "D;$action_status"
+            _forge_osc133_emit "A"
+            # Note: rewind action intentionally modifies BUFFER and handles its own prompt reset
+            return $action_status
         ;;
         copy)
             _forge_action_copy

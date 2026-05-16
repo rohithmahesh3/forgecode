@@ -275,7 +275,7 @@ function _forge_action_rewind() {
         rm -f "$rewind_file"
     fi
     
-    # Note: caller (_forge_reset) will handle reset-prompt
+    zle reset-prompt
 }
 
 # Helper function to clone and switch to conversation
