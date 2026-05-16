@@ -72,14 +72,18 @@ pub fn remove_tag_with_prefix(text: &str, prefix: &str) -> String {
 /// Cleans a user prompt by extracting content from <feedback> tags if present,
 /// or stripping all XML tags and meta-information.
 pub fn clean_user_prompt(text: &str) -> String {
-    // 1. Try to extract content from <feedback> tag
+    // 1. Try to extract content from <feedback> or <task> tags
     if let Some(content) = extract_tag_content(text, "feedback") {
+        return content.to_string();
+    }
+    if let Some(content) = extract_tag_content(text, "task") {
         return content.to_string();
     }
 
     // 2. Remove known meta tags with their content
     let mut cleaned = remove_tag_with_prefix(text, "system_");
     cleaned = remove_tag_with_prefix(&cleaned, "context_");
+    cleaned = remove_tag_with_prefix(&cleaned, "terminal_context");
 
     // 3. Strip all remaining tags but preserve newlines (unlike strip_xml_tags)
     let tag_pattern = regex::Regex::new(r"<[^>]*>").unwrap();
@@ -257,6 +261,22 @@ mod tests {
         let actual = clean_user_prompt(fixture);
         // Should strip system_date and its tags
         let expected = "Just plain text";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_clean_user_prompt_with_terminal_context() {
+        let fixture = "<task>create a plan</task><terminal_context><commands><command>ls</command></commands></terminal_context>";
+        let actual = clean_user_prompt(fixture);
+        let expected = "create a plan";
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_clean_user_prompt_with_task_only() {
+        let fixture = "<task>new task</task><system_info>some info</system_info>";
+        let actual = clean_user_prompt(fixture);
+        let expected = "new task";
         assert_eq!(actual, expected);
     }
 

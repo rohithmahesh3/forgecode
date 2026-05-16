@@ -252,7 +252,13 @@ function _forge_action_rewind() {
     # Use _forge_exec_interactive to allow the Rust TUI message picker
     # We export FORGE_REWIND_FILE so the rust process knows where to write the content
     local -x FORGE_REWIND_FILE="$rewind_file"
-    _forge_exec_interactive conversation rewind $input_text
+    
+    local target_id="$input_text"
+    if [[ -z "$target_id" ]]; then
+        target_id="$_FORGE_CONVERSATION_ID"
+    fi
+
+    _forge_exec_interactive conversation rewind $target_id
     
     # Check if a message was rewound and we have content
     if [[ -f "$rewind_file" ]]; then
@@ -276,13 +282,23 @@ function _forge_action_rewind() {
 function _forge_clone_and_switch() {
     local clone_target="$1"
     
+    local target_id="$clone_target"
+    if [[ -z "$target_id" ]]; then
+        target_id="$_FORGE_CONVERSATION_ID"
+    fi
+
     # Store original conversation ID to check if we're cloning current conversation
     local original_conversation_id="$_FORGE_CONVERSATION_ID"
     
     # Execute clone command
-    _forge_log info "Cloning conversation \033[1m${clone_target}\033[0m"
+    if [[ -n "$target_id" ]]; then
+        _forge_log info "Cloning conversation \033[1m${target_id}\033[0m"
+    else
+        _forge_log info "Cloning conversation"
+    fi
+    
     local clone_output
-    clone_output=$($_FORGE_BIN conversation clone "$clone_target" 2>&1)
+    clone_output=$($_FORGE_BIN conversation clone "$target_id" 2>&1)
     local clone_exit_code=$?
     
     if [[ $clone_exit_code -eq 0 ]]; then

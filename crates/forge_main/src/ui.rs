@@ -135,6 +135,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             return Ok(Some(cid));
         }
 
+        if let Some(cid) = self.cli.conversation_id {
+            return Ok(Some(cid));
+        }
+
         // Show conversation picker
         let conversations = self
             .api
