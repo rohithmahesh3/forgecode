@@ -730,9 +730,10 @@ impl Context {
         self
     }
 
-    /// Formats user messages with numbered indices for display during interactive
-    /// rewind. Returns a list of `(full_message_index, display_string)` tuples,
-    /// where the display string shows a 1-indexed user message number and preview.
+    /// Formats user messages with numbered indices for display during
+    /// interactive rewind. Returns a list of `(full_message_index,
+    /// display_string)` tuples, where the display string shows a 1-indexed
+    /// user message number and preview.
     pub fn format_messages_for_rewind(&self) -> Vec<(usize, String)> {
         self.messages
             .iter()
@@ -745,7 +746,10 @@ impl Context {
                 let preview = if preview.len() > REWIND_PREVIEW_MAX_LEN {
                     format!(
                         "{}...",
-                        preview.chars().take(REWIND_PREVIEW_MAX_LEN).collect::<String>()
+                        preview
+                            .chars()
+                            .take(REWIND_PREVIEW_MAX_LEN)
+                            .collect::<String>()
                     )
                 } else {
                     preview.to_string()
@@ -769,24 +773,25 @@ impl Context {
     pub fn modified_files_from(&self, from_index: usize) -> Vec<String> {
         let mut files = Vec::new();
         for msg in self.messages.iter().skip(from_index) {
-                if let ContextMessage::Tool(result) = &msg.message {
-                    // 1. Use the pre-calculated modified files from the tool execution
-                    let mut msg_modified = result.modified_files.clone();
+            if let ContextMessage::Tool(result) = &msg.message {
+                // 1. Use the pre-calculated modified files from the tool execution
+                let mut msg_modified = result.modified_files.clone();
 
-                    // 2. Fallback dynamic extraction for older conversations where modified_files might be empty
-                    if let Some(text) = result.output.as_str() {
-                        let extracted_paths = crate::xml::extract_modified_files_from_output(text);
+                // 2. Fallback dynamic extraction for older conversations where modified_files
+                //    might be empty
+                if let Some(text) = result.output.as_str() {
+                    let extracted_paths = crate::xml::extract_modified_files_from_output(text);
 
-                        for p in extracted_paths {
-                            if !msg_modified.contains(&p) {
-                                msg_modified.push(p);
-                            }
+                    for p in extracted_paths {
+                        if !msg_modified.contains(&p) {
+                            msg_modified.push(p);
                         }
                     }
-
-                    files.extend(msg_modified);
                 }
+
+                files.extend(msg_modified);
             }
+        }
         files
     }
 

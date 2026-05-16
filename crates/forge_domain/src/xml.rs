@@ -104,8 +104,8 @@ pub fn extract_attribute(tag: &str, attr_name: &str) -> Option<String> {
     None
 }
 
-/// Removes all XML/HTML tags from the text, keeping only the content between tags.
-/// Multiple whitespace characters are collapsed into a single space.
+/// Removes all XML/HTML tags from the text, keeping only the content between
+/// tags. Multiple whitespace characters are collapsed into a single space.
 pub fn strip_xml_tags(text: &str) -> String {
     let tag_pattern = regex::Regex::new(r"<[^>]*>").unwrap();
     let result = tag_pattern.replace_all(text, "").to_string();
@@ -115,7 +115,8 @@ pub fn strip_xml_tags(text: &str) -> String {
 }
 
 /// Extracts file paths from XML tags in the given text.
-/// Supports tags: plan_created, file_created, file_overwritten, file_diff, file_removed.
+/// Supports tags: plan_created, file_created, file_overwritten, file_diff,
+/// file_removed.
 pub fn extract_modified_files_from_output(text: &str) -> Vec<String> {
     let mut modified_files = Vec::new();
     let tags = [

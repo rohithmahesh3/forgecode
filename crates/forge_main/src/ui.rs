@@ -125,10 +125,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         id: Option<String>,
     ) -> anyhow::Result<Option<ConversationId>> {
         if let Some(id_str) = id {
-            return Ok(Some(
-                ConversationId::parse(&id_str)
-                    .map_err(|_| anyhow::anyhow!("Invalid conversation ID: {id_str}"))?,
-            ));
+            return Ok(Some(ConversationId::parse(&id_str).map_err(|_| {
+                anyhow::anyhow!("Invalid conversation ID: {id_str}")
+            })?));
         }
 
         if let Some(cid) = self.state.conversation_id {
@@ -2724,10 +2723,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
 
         // Collect file paths that were modified by tool results in messages
         // that will be removed. These files' snapshots need to be reverted.
-        // We use full_idx because it's the index of the user message we are rewinding AT.
+        // We use full_idx because it's the index of the user message we are rewinding
+        // AT.
         let modified_files = context.modified_files_from(full_idx);
 
-        // Perform the truncation (keep messages up to but excluding the selected user message)
+        // Perform the truncation (keep messages up to but excluding the selected user
+        // message)
         let rewound_message_content = context
             .messages
             .get(full_idx)
